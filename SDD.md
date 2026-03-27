@@ -46,7 +46,7 @@
 | 項目 | 說明 |
 |------|------|
 | 系統類型 | 批次處理 + 即時問答混合架構 |
-| 部署環境 | Windows 10 個人電腦（可擴充至雲端） |
+| 部署環境 | Linux Server（nginx + gunicorn + systemd）|
 | 主要使用者 | 政府相關人員、政策研究人員 |
 | 語言環境 | 繁體中文（台灣） |
 | 運行頻率 | 每日一次（批次）+ 隨時問答（即時） |
@@ -91,7 +91,7 @@
 | NFR-04 | LINE 訊息長度不超過 5000 字元上限 | 相容性 |
 | NFR-05 | 問答回應在 10 秒內完成 | 使用者體驗 |
 | NFR-06 | 系統可在無人操作下自動執行 | 可用性 |
-| NFR-07 | API 金鑰及 LINE Token 不直接暴露於版本控制 | 安全性（目前未達成） |
+| NFR-07 | API 金鑰及 LINE Token 不直接暴露於版本控制 | 安全性 |
 
 ---
 
@@ -149,7 +149,7 @@
                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │               互動問答層 (webhook.py)                             │
-│   Flask 伺服器  |  ngrok 隧道  |  對話歷史管理  |  RAG 搜尋       │
+│   Flask + gunicorn  |  nginx 反代  |  對話歷史管理  |  RAG 搜尋    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -195,8 +195,11 @@
 #### 組態項目規格
 
 ```python
-# ── Gemini LLM 設定 ──
-API_KEY: str          # LiteLLM 代理 API Key
+# ── 路徑 ──
+BASE_DIR: str    # 專案根目錄絕對路徑（os.path.dirname(os.path.abspath(__file__))）
+
+# ── Gemini LLM 設定（從 .env 讀取）──
+API_KEY: str          # 從環境變數 GEMINI_API_KEY 讀取
 MODEL: str            # 模型名稱，目前為 "gemini-3-flash"
 BASE_URL: str         # LiteLLM 代理端點：https://litellm.netdb.csie.ncku.edu.tw
 IMPORTANT_COUNT: int  # AI 篩選保留的文章數量，預設 10
@@ -209,33 +212,34 @@ SOURCES: dict[str, bool]  # 各 RSS 來源的啟用/停用開關
 #   "google": True,   # Google News TW
 #   "ettoday": True,  # ETtoday 新聞雲
 #   "pts":   True,    # 公共電視新聞
-#   "udn":   False    # 聯合新聞網（目前停用）
 # }
 
 # ── 時間過濾 ──
 DATE_FILTER: str  # "today" | "2days" | "all"
 
 # ── 抓取限制 ──
-MAX_ITEMS_PER_SOURCE: int   # 每個來源最多抓取筆數，預設 200
+MAX_ITEMS_PER_SOURCE: int    # 每個來源最多抓取筆數，預設 200
 MAX_ARTICLES_TO_ANALYZE: int # 最終送入深度分析的文章數，預設 10
 
-# ── 資料庫 ──
-DB_PATH: str  # SQLite 檔案路徑，預設 "sentiment.db"
+# ── 資料庫（絕對路徑）──
+DB_PATH: str    # SQLite 檔案路徑：BASE_DIR / "sentiment.db"
+CHROMA_DIR: str # ChromaDB 目錄路徑：BASE_DIR / "chroma_db"
 
-# ── 排程器（Windows Task Scheduler）──
+# ── 排程器（cron 模式下通常設為 False）──
 SCHEDULER_ENABLED: bool    # True/False
-SCHEDULER_TIMES: list[str] # 執行時間列表，例如 ["08:00", "20:00"]
+SCHEDULER_TIMES: list[str] # 執行時間列表，例如 ["08:00"]
 
-# ── LINE Bot 憑證 ──
+# ── LINE Bot 憑證（從 .env 讀取）──
 LINE_CHANNEL_ID: str
 LINE_CHANNEL_SECRET: str
 LINE_CHANNEL_ACCESS_TOKEN: str
-LINE_USER_ID: str  # 推播目標使用者的 LINE User ID
+LINE_USER_IDS: list[str]  # 推播目標，支援多位使用者（從 LINE_USER_IDS 環境變數以逗號分隔讀取）
 ```
 
 #### 設計決策
-- **所有常數集中於此檔案**，其他模組 `from config import XXX` 取得，不直接讀取環境變數或設定檔。
-- 敏感憑證目前直接寫入此檔案（開發便利），**生產環境應改用 `.env` 搭配 `python-dotenv`**。
+- **所有常數集中於此檔案**，其他模組 `from config import XXX` 取得。
+- 敏感憑證透過 `python-dotenv` 從 `.env` 讀取，`.env` 列於 `.gitignore`，不進版本控制。
+- `DB_PATH` 與 `CHROMA_DIR` 使用 `__file__` 計算絕對路徑，確保 cron / systemd 從任何工作目錄執行時路徑均正確。
 
 ---
 
@@ -758,10 +762,11 @@ LIMIT ?
 
 | 項目 | 說明 |
 |------|------|
-| 輸入 | `text`: 訊息內容；`to`: 目標 User ID（預設 `LINE_USER_ID`）|
+| 輸入 | `text`: 訊息內容；`to`: 指定單一 User ID（省略時推播給所有 `LINE_USER_IDS`）|
 | 長度限制 | LINE API 單則訊息上限 5000 字元 |
 | 截斷機制 | 超過 4900 字元時截斷並加入 `"⋯（訊息過長，已截斷）"` |
 | 訊息類型 | `TextMessage` |
+| 多人推播 | `to` 省略時對 `LINE_USER_IDS` 中每個 UID 各推播一次，單筆失敗不影響其他人 |
 
 ---
 
@@ -1062,11 +1067,11 @@ main.py / weekly.py / webhook.py
 #### Webhook 設定需求
 
 ```
-1. 啟動 Flask 伺服器：python webhook.py (port 5000)
-2. 啟動 ngrok 隧道：ngrok http 5000
-3. 複製 ngrok HTTPS URL
+1. gunicorn 啟動：由 systemd 服務管理（監聽 127.0.0.1:5000）
+2. nginx 反向代理：將 /callback 路由至 localhost:5000
+3. SSL 憑證：Let's Encrypt（由 certbot 自動管理）
 4. LINE Developer Console 設定：
-   Webhook URL = https://<ngrok-url>/callback
+   Webhook URL = https://<server-domain>/callback
    Use Webhook: ON
 ```
 
@@ -1122,42 +1127,41 @@ response = client.chat.completions.create(
 
 ## 10. 部署架構
 
-### 10.1 目前部署（Windows 本地端）
+### 10.1 Server 部署
 
 ```
-Windows 10 電腦
-├── Python 環境
-│   ├── sentence_transformers (含 multilingual-e5-large 模型)
-│   ├── chromadb
-│   ├── flask
-│   ├── linebot
-│   └── requests, beautifulsoup4, openai, ...
+Linux Server
+├── Python 虛擬環境 (venv)
+│   └── requirements.txt 套件（含 multilingual-e5-large 模型）
 │
-├── 批次執行
-│   ├── run_daily.bat  ← Windows 工作排程器觸發
-│   └── run_weekly.bat ← Windows 工作排程器觸發
+├── 憑證管理
+│   └── .env（GEMINI_API_KEY、LINE Token、LINE_USER_IDS）
 │
 ├── 持久化儲存
-│   ├── sentiment.db   (SQLite, ~1.2 MB)
-│   └── chroma_db/     (ChromaDB, 向量索引)
+│   ├── sentiment.db   (SQLite)
+│   ├── chroma_db/     (ChromaDB 向量索引)
+│   └── reports/       (報告 .txt 輸出)
 │
-└── LINE Bot 伺服器
-    ├── python webhook.py (port 5000)
-    └── ngrok http 5000 (公開 HTTPS 隧道)
+├── LINE Bot 伺服器
+│   ├── gunicorn (webhook:app, 127.0.0.1:5000)  ← systemd 管理
+│   └── nginx (反向代理 /callback → :5000, HTTPS)
+│
+└── 排程執行
+    ├── cron: main.py   每日 08:00
+    └── cron: weekly.py 每週一 09:00
 ```
 
-### 10.2 排程執行設定
+### 10.2 排程執行設定（crontab）
 
 ```
-Windows 工作排程器:
-  任務: "每日新聞分析"
-  觸發: 每日 01:25
-  動作: 執行 run_daily.bat
+# 每天早上 08:00 跑每日分析
+0 8 * * * /path/to/venv/bin/python /path/to/project/main.py >> /path/to/project/logs/daily.log 2>&1
 
-  任務: "每週情勢綜整"
-  觸發: 每週一 08:00
-  動作: 執行 run_weekly.bat
+# 每週一早上 09:00 跑週報
+0 9 * * 1 /path/to/venv/bin/python /path/to/project/weekly.py >> /path/to/project/logs/weekly.log 2>&1
 ```
+
+詳細設定模板見 `deploy/crontab.txt`。
 
 ### 10.3 執行方式
 
@@ -1165,7 +1169,8 @@ Windows 工作排程器:
 |---------|------|
 | 手動執行每日流程 | `python main.py` |
 | 手動執行每週報告 | `python weekly.py` |
-| 啟動 LINE Bot 伺服器 | `python webhook.py` |
+| 啟動 LINE Bot（開發用）| `python webhook.py` |
+| 啟動 LINE Bot（正式）| `sudo systemctl start sentiment-bot` |
 | 查看資料庫狀態 | `python db_utils.py status` |
 | 清除所有資料 | `python db_utils.py clear-all` |
 
@@ -1173,33 +1178,16 @@ Windows 工作排程器:
 
 ## 11. 安全性考量
 
-### 11.1 目前已知安全問題
+### 11.1 安全狀態
 
-| 問題 | 風險等級 | 說明 |
+| 項目 | 風險等級 | 狀態 |
 |------|---------|------|
-| 憑證硬編碼於 `config.py` | 高 | API Key、LINE Token 等敏感資訊不應提交至版本控制 |
-| LINE User ID 硬編碼 | 中 | 若洩漏可能被用於垃圾訊息攻擊 |
-| 爬蟲無 robots.txt 檢查 | 低 | 可能違反某些網站的使用條款 |
-| Flask 以 `debug=False` 運行 | 已處理 | 不暴露除錯資訊 |
+| 敏感憑證管理 | 高 | 已解決：透過 `.env` + `python-dotenv` 讀取，`.env` 列於 `.gitignore` |
+| 多使用者推播 ID | 中 | 已解決：`LINE_USER_IDS` 從 `.env` 讀取，不寫死於程式碼 |
+| 爬蟲無 robots.txt 檢查 | 低 | 未處理 |
+| Flask 以 `debug=False` 運行 | — | 已處理 |
 
-### 11.2 建議改善措施
-
-```python
-# 建議：將 config.py 改為讀取環境變數
-import os
-from dotenv import load_dotenv
-
-load_dotenv()  # 讀取 .env 檔案
-
-API_KEY = os.environ["GEMINI_API_KEY"]
-LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
-LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-LINE_USER_ID = os.environ["LINE_USER_ID"]
-```
-
-並將 `.env` 加入 `.gitignore`。
-
-### 11.3 LINE Webhook 驗證
+### 11.2 LINE Webhook 驗證
 
 `webhook.py` 使用 LINE SDK 的 `WebhookHandler` 驗證每個 Webhook 請求的 `X-Line-Signature`，確保請求來自 LINE 官方平台，防止偽造請求。
 
@@ -1211,25 +1199,19 @@ LINE_USER_ID = os.environ["LINE_USER_ID"]
 
 | 限制 | 影響 | 描述 |
 |------|------|------|
-| 單一推播目標 | 中 | `LINE_USER_ID` 寫死，只能推播給一位使用者 |
-| ngrok 限制 | 中 | ngrok 免費版每次重啟 URL 改變，需重新設定 Webhook |
-| 無排程可靠性保證 | 中 | 若電腦關機，Windows 工作排程器不執行 |
-| SQLite 無並行控制 | 低 | 若多個程序同時寫入可能發生鎖定 |
-| 對話歷史存於記憶體 | 低 | 伺服器重啟後對話歷史消失 |
+| SQLite 無並行控制 | 低 | 若多個程序同時寫入可能發生鎖定（cron 排程不重疊則無影響）|
+| 對話歷史存於記憶體 | 低 | 服務重啟後對話歷史消失 |
 | 無重試機制 | 低 | API 呼叫失敗時不自動重試 |
 
 ### 12.2 建議未來改善
 
 | 方向 | 優先級 | 說明 |
 |------|--------|------|
-| 敏感憑證移至 `.env` | 高 | 避免洩漏至版本控制 |
-| 支援多位使用者 | 中 | 將 LINE_USER_ID 改為可配置的列表 |
-| 容器化部署 (Docker) | 中 | 確保跨環境一致性，解決 ngrok 問題 |
-| 雲端部署 (GCP/AWS) | 中 | 使用 Cloud Run 或 EC2 替代本地電腦，提升可靠性 |
-| 對話歷史持久化 | 低 | 將 `conversation_histories` 儲存至 SQLite |
-| 新增 Reply API | 低 | Webhook 即時回覆使用 Reply API 降低成本 |
+| 對話歷史持久化 | 低 | 將 `conversation_histories` 儲存至 SQLite，重啟後恢復 |
+| 新增 Reply API | 低 | Webhook 直接回覆改用 Reply API，降低 LINE 推播費用 |
 | 加入 LLM 重試邏輯 | 低 | API 呼叫失敗時指數退避重試 |
-| 監控與告警 | 低 | 每日流程失敗時發送告警訊息 |
+| 監控與告警 | 低 | 每日流程失敗時透過 LINE 推播告警訊息 |
+| 容器化部署 (Docker) | 低 | 確保跨環境一致性，方便遷移 |
 | 單元測試 | 低 | 為各模組撰寫測試案例 |
 
 ---
