@@ -1,0 +1,29 @@
+# systemd 服務設定（讓 webhook 在背景持續運行）
+# 放置路徑：/etc/systemd/system/sentiment-bot.service
+#
+# 啟用服務：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable sentiment-bot
+#   sudo systemctl start sentiment-bot
+#
+# 查看狀態：sudo systemctl status sentiment-bot
+# 查看 log：sudo journalctl -u sentiment-bot -f
+
+[Unit]
+Description=Sentiment Analysis LINE Bot (webhook)
+After=network.target
+
+[Service]
+User=YOUR_SERVER_USER                          # ← 填入 server 的使用者名稱
+WorkingDirectory=/path/to/Sentiment_Analysis   # ← 填入專案的絕對路徑
+EnvironmentFile=/path/to/Sentiment_Analysis/.env  # ← 同上
+ExecStart=/path/to/venv/bin/gunicorn \         # ← 填入 venv 的絕對路徑
+    --workers 2 \
+    --bind 127.0.0.1:5000 \
+    --timeout 120 \
+    webhook:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

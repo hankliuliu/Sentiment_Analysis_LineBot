@@ -1,0 +1,35 @@
+# 敏感憑證（絕對不能 commit）
+.env
+
+# 資料庫（自動產生，不需版本控制）
+sentiment.db
+chroma_db/
+
+# 報告輸出
+reports/
+
+# Windows 批次檔（server 用 cron 取代）
+*.bat
+
+# Python 暫存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Claude Code 設定
+.claude/
+
+# 虛擬環境
+venv/
+.venv/
+env/
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+
+# macOS
+.DS_Store
