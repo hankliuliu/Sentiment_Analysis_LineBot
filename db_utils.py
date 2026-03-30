@@ -12,9 +12,9 @@ import sys
 import sqlite3
 import shutil
 import os
-from config import DB_PATH
+from config import DB_PATH, CHROMA_DIR
 
-CHROMA_PATH = "./chroma_db"
+CHROMA_PATH = CHROMA_DIR
 
 
 def get_conn():

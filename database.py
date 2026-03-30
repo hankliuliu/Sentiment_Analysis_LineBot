@@ -239,23 +239,6 @@ def get_cached_content(url: str) -> str | None:
     return row[0] if row else None
 
 
-def get_today_context():
-    """取得最新報告與文章（供 webhook.py 的 AI 使用）。"""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT content FROM reports ORDER BY id DESC LIMIT 1")
-    row = cursor.fetchone()
-    report_text = row[0] if row else "（今日報告尚未產生）"
-    cursor.execute("""
-        SELECT source, title, content
-        FROM   articles
-        WHERE  fetched_at = (SELECT MAX(fetched_at) FROM articles)
-    """)
-    articles = cursor.fetchall()
-    conn.close()
-    return report_text, articles
-
-
 def save_report(content, report_type: str = "daily"):
     """將 Gemini 的摘要報告存進 reports 表。
     report_type: 'daily'（預設）或 'weekly'

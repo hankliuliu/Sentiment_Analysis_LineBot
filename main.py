@@ -1,4 +1,3 @@
-# from google import genai  # 自己訂的 API
 import os
 import openai
 import schedule
@@ -13,7 +12,6 @@ from line_push import push_message, format_report_for_line
 from datetime  import datetime
 import json
 
-# client = genai.Client(api_key=API_KEY)  # 自己訂的 API
 client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
 def select_important(articles):
@@ -42,10 +40,6 @@ def select_important(articles):
 請只回傳一個 JSON 陣列，內容是你選出的文章編號，不要有其他文字。
 範例格式：[0, 3, 7, 12, 15]
 """
-    # response = client.models.generate_content(
-    #     model=MODEL,
-    #     contents=prompt
-    # )  # 自己訂的 API
     response = client.chat.completions.create(
         model=MODEL,
         messages=[
@@ -105,10 +99,6 @@ def analyze_in_depth(articles):
 格式不用 Markdown，一般訊息格式。
 問題以 1.2.3.4. 標示，新聞項目符號使用「🔸 」，第 4 點使用「🔹 」。
 """
-    # response = client.models.generate_content(
-    #     model=MODEL,
-    #     contents=prompt
-    # )  # 自己訂的API
     response = client.chat.completions.create(
         model=MODEL,
         messages=[

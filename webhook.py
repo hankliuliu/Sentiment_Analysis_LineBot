@@ -250,6 +250,7 @@ def handle_message(event: MessageEvent):
 # ──────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
-    print("[Webhook] 伺服器啟動於 http://localhost:5000")
-    print("[Webhook] 請確認 ngrok 已啟動並設定好 LINE Webhook URL")
-    app.run(port=5000, debug=False)
+    # (Local Version)
+    # print("[Webhook] 伺服器啟動於 http://localhost:5000")
+    # print("[Webhook] 請確認 ngrok 已啟動並設定好 LINE Webhook URL")
+    # app.run(port=5000, debug=False)
