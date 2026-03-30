@@ -159,7 +159,9 @@ def fetch_pts_news():
     print("  [公視] 正在抓取...")
     url = "https://news.pts.org.tw/xml/newsfeed.xml"
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
         soup = BeautifulSoup(resp.content, "xml")
         articles = []
         # 公視使用 Atom 格式：<entry> 而非 <item>，<link href="..."> 而非 <link>文字
