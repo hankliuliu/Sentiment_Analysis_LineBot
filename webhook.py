@@ -25,7 +25,7 @@ import threading
 
 from config import (LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN,
                     API_KEY, MODEL, BASE_URL)
-from database import get_connection, init_db, search_similar_articles, search_similar_reports
+from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id
 from embedder import embed_query
 from line_push import push_message
 
@@ -105,7 +105,8 @@ def build_system_prompt(user_query: str) -> str:
 回覆風格：
 - 繁體中文，口語化但有深度
 - 適合 LINE 閱讀：分點說明，每點不超過 2 句
-- 不用 Markdown 符號（# ** 等）
+- 格式不用 Markdown，一般訊息格式。
+- 列點以 1.2.3.4. 標示，項目符號使用「🔹 」。
 
 === 背景資料（僅供你參考）===
 
@@ -176,6 +177,9 @@ def handle_message(event: MessageEvent):
     user_id     = event.source.user_id
     user_text   = event.message.text.strip()
     reply_token = event.reply_token
+
+    # ── 記錄 user_id ──────────────────────
+    save_user_id(user_id)
 
     # ── 已讀 ──────────────────────────────
     try:

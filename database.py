@@ -191,6 +191,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_fetched_at ON articles(fetched_at)
     """)
 
+    # 使用者表：儲存曾傳訊息的 LINE user_id
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id   TEXT PRIMARY KEY,
+            added_at  TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
     print("[Database] 初始化完成")
@@ -258,6 +266,28 @@ def save_report(content, report_type: str = "daily"):
     conn.commit()
     conn.close()
     print(f"[Database] {report_type} 報告已儲存")
+
+
+def save_user_id(user_id: str):
+    """將 LINE user_id 存入 users 表，已存在則略過。"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT OR IGNORE INTO users (user_id, added_at)
+        VALUES (?, ?)
+    """, (user_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+
+def get_all_user_ids() -> list[str]:
+    """取得所有已登錄的 LINE user_id。"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
 
 
 def get_recent_daily_reports(days: int = 7) -> list[dict]:

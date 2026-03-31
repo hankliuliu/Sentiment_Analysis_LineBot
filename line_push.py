@@ -3,6 +3,7 @@ from linebot.v3.messaging import (
     PushMessageRequest, TextMessage
 )
 from config import LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_IDS
+from database import get_all_user_ids
 
 
 def get_messaging_api():
@@ -20,7 +21,7 @@ def push_message(text, to=None):
     if len(text) > 4900:
         text = text[:4900] + "\n⋯（訊息過長，已截斷）"
 
-    targets = [to] if to else LINE_USER_IDS
+    targets = [to] if to else (get_all_user_ids() or LINE_USER_IDS)
     if not targets:
         print("[Line Bot] 警告：LINE_USER_IDS 未設定，跳過推播")
         return
