@@ -192,7 +192,7 @@ def fetch_article_content(url):
     策略：找頁面裡最長的 <p> 段落集合，通常就是內文。
     """
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
+        resp = requests.get(url, headers=HEADERS, timeout=10, verify=False)
         soup = BeautifulSoup(resp.text, "html.parser")
 
         # 移除導覽列、廣告、頁尾等雜訊

@@ -232,7 +232,8 @@ def save_articles(articles):
 
     conn.commit()
     conn.close()
-    print(f"[Database] 已儲存 {len(articles)} 篇文章")
+    with_content = sum(1 for a in articles if a.get("content", ""))
+    print(f"[Database] 已儲存 {len(articles)} 篇文章（含內文：{with_content} 篇）")
 
 def get_cached_content(url: str) -> str | None:
     """
