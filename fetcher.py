@@ -27,13 +27,16 @@ def fetch_yahoo_news():
         for item in soup.find_all("item")[:MAX_ITEMS_PER_SOURCE]:
             title = item.find("title")
             link  = item.find("link")
+            guid  = item.find("guid")
             pub   = item.find("pubDate")
             desc  = item.find("description")
-            if title and link:
+            url   = (guid.text.strip() if guid and guid.text else
+                     link.text.strip() if link and link.text else "")
+            if title and url:
                 articles.append({
                     "source":      "Yahoo新聞",
                     "title":       title.text.strip(),
-                    "url":         link.text.strip() if link.text else "",
+                    "url":         url,
                     "time":        pub.text.strip() if pub else "",
                     "description": desc.text.strip() if desc else "",
                     "content":     ""
