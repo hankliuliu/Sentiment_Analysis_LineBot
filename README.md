@@ -1,6 +1,7 @@
 # 台灣新聞輿情監控系統
 
-自動化從幾家媒體抓取新聞，透過 AI 分析產生每日情勢簡報，並透過 LINE Bot 推播與互動問答。
+自動化從幾家媒體抓取新聞，透過 AI 分析產生每日情勢簡報，並透過 LINE Bot 推播與互動問答。  
+(目前版本偏向 News Butler LineBot，未來將持續發展為完整的 Sentiment Analysis LineBot)
 
 ---
 
