@@ -191,13 +191,21 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_fetched_at ON articles(fetched_at)
     """)
 
-    # 使用者表：儲存曾傳訊息的 LINE user_id
+    # 使用者表：儲存曾傳訊息的 LINE user_id，以頻道區分
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
-            user_id   TEXT PRIMARY KEY,
-            added_at  TEXT
+            user_id    TEXT,
+            channel_id TEXT,
+            added_at   TEXT,
+            PRIMARY KEY (user_id, channel_id)
         )
     """)
+
+    # 遷移：舊資料庫缺少 channel_id 欄時自動補上
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN channel_id TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -269,23 +277,32 @@ def save_report(content, report_type: str = "daily"):
     print(f"[Database] {report_type} 報告已儲存")
 
 
-def save_user_id(user_id: str):
+def save_user_id(user_id: str, channel_id: str = ""):
     """將 LINE user_id 存入 users 表，已存在則略過。"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT OR IGNORE INTO users (user_id, added_at)
-        VALUES (?, ?)
-    """, (user_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        INSERT OR IGNORE INTO users (user_id, channel_id, added_at)
+        VALUES (?, ?, ?)
+    """, (user_id, channel_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
 
 
-def get_all_user_ids() -> list[str]:
-    """取得所有已登錄的 LINE user_id。"""
+def remove_user_id(user_id: str, channel_id: str = ""):
+    """將 LINE user_id 從 users 表移除（封鎖或刪除好友時呼叫）。"""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
+    cursor.execute("DELETE FROM users WHERE user_id = ? AND channel_id = ?", (user_id, channel_id))
+    conn.commit()
+    conn.close()
+
+
+def get_all_user_ids(channel_id: str = "") -> list[str]:
+    """取得指定頻道的所有已登錄 LINE user_id。"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE channel_id = ?", (channel_id,))
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]

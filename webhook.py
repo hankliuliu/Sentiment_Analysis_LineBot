@@ -18,14 +18,14 @@ from linebot.v3.messaging import (
     QuickReply, QuickReplyItem, MessageAction,
     MarkMessagesAsReadRequest,
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent, UnfollowEvent
 from linebot.v3.exceptions import InvalidSignatureError
 import openai
 import threading
 
-from config import (LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN,
+from config import (LINE_CHANNEL_SECRET, LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_ID,
                     API_KEY, MODEL, BASE_URL)
-from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id
+from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id, remove_user_id
 from embedder import embed_query
 from line_push import push_message
 
@@ -179,7 +179,7 @@ def handle_message(event: MessageEvent):
     reply_token = event.reply_token
 
     # ── 記錄 user_id ──────────────────────
-    save_user_id(user_id)
+    save_user_id(user_id, LINE_CHANNEL_ID)
 
     # ── 已讀 ──────────────────────────────
     try:
@@ -249,6 +249,16 @@ def handle_message(event: MessageEvent):
         args=(user_id, user_text),
         daemon=True
     ).start()
+
+
+@handler.add(FollowEvent)
+def handle_follow(event: FollowEvent):
+    save_user_id(event.source.user_id, LINE_CHANNEL_ID)
+
+
+@handler.add(UnfollowEvent)
+def handle_unfollow(event: UnfollowEvent):
+    remove_user_id(event.source.user_id, LINE_CHANNEL_ID)
 
 
 # ──────────────────────────────────────────
