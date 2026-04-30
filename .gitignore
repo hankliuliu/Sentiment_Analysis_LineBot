@@ -33,3 +33,7 @@ env/
 
 # macOS
 .DS_Store
+
+# 本地測試與暫時檔案
+news_sources.txt
+test_url.py

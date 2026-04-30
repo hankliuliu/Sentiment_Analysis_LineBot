@@ -1,6 +1,6 @@
 import sqlite3
 import chromadb
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DB_PATH, CHROMA_DIR
 
 # ── ChromaDB 向量資料庫 ──────────────────────────────────────────
@@ -310,18 +310,19 @@ def get_all_user_ids(channel_id: str = "") -> list[str]:
 
 def get_recent_daily_reports(days: int = 7) -> list[dict]:
     """
-    取得最近 N 份 daily 報告（預設 7 份）。
+    取得最近 N 天內的 daily 報告（預設 7 天）。
     回傳 list of dict，每筆含 'created_at' 與 'content'。
     """
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT created_at, content
         FROM   reports
         WHERE  type = 'daily'
+          AND  created_at >= ?
         ORDER BY id DESC
-        LIMIT ?
-    """, (days,))
+    """, (cutoff,))
     rows = cursor.fetchall()
     conn.close()
     return [{"created_at": row[0], "content": row[1]} for row in rows]

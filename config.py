@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # ════════════════════════════════════════
 API_KEY         = os.environ["GEMINI_API_KEY"]
 MODEL           = "gemini-3-flash"
-BASE_URL        = "https://litellm.netdb.csie.ncku.edu.tw"
+BASE_URL        = os.environ["LITELLM_BASE_URL"]
 IMPORTANT_COUNT = 10  # 第一次篩選幾篇
 
 # ════════════════════════════════════════
@@ -57,11 +57,17 @@ SCHEDULER_TIMES   = ["08:00"]  # 每天幾點執行
 
 # ════════════════════════════════════════
 #  LINE Bot 設定（從 .env 讀取）
+#  新增頻道：在 CHANNELS 加一組 key，並在 .env 補三個對應變數即可。
 # ════════════════════════════════════════
-LINE_CHANNEL_ID           = os.environ["LINE_CHANNEL_ID"]
-LINE_CHANNEL_SECRET       = os.environ["LINE_CHANNEL_SECRET"]
-LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-
-# 推播目標：支援多位使用者，以逗號分隔
-# 範例：LINE_USER_IDS=Uabc123,Udef456
-LINE_USER_IDS = [uid.strip() for uid in os.environ.get("LINE_USER_IDS", "").split(",") if uid.strip()]
+CHANNELS = {
+    "channel_1": {
+        "channel_id":   os.environ["LINE_1_CHANNEL_ID"],
+        "secret":       os.environ["LINE_1_CHANNEL_SECRET"],
+        "access_token": os.environ["LINE_1_CHANNEL_ACCESS_TOKEN"],
+    },
+    "channel_2": {
+        "channel_id":   os.environ["LINE_2_CHANNEL_ID"],
+        "secret":       os.environ["LINE_2_CHANNEL_SECRET"],
+        "access_token": os.environ["LINE_2_CHANNEL_ACCESS_TOKEN"],
+    },
+}

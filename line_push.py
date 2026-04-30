@@ -2,49 +2,45 @@ from linebot.v3.messaging import (
     ApiClient, MessagingApi, Configuration,
     PushMessageRequest, TextMessage
 )
-from config import LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_ID, LINE_USER_IDS
+from config import CHANNELS
 from database import get_all_user_ids
 
 
-def get_messaging_api():
-    """建立 Line Messaging API 連線"""
-    configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
-    api_client    = ApiClient(configuration)
-    return MessagingApi(api_client)
-
-
-def push_message(text, to=None):
-    """
-    推播文字訊息給指定使用者。
-    to: 指定單一 LINE user_id；省略時推播給 config 的所有 LINE_USER_IDS。
-    """
-    if len(text) > 4900:
-        text = text[:4900] + "\n⋯（訊息過長，已截斷）"
-
-    targets = [to] if to else (get_all_user_ids(LINE_CHANNEL_ID) or LINE_USER_IDS)
-    if not targets:
-        print("[Line Bot] 警告：LINE_USER_IDS 未設定，跳過推播")
-        return
-
-    api = get_messaging_api()
-    for uid in targets:
+def _send(text: str, uid: str, access_token: str):
+    configuration = Configuration(access_token=access_token)
+    with ApiClient(configuration) as api_client:
         try:
-            api.push_message(
-                PushMessageRequest(
-                    to=uid,
-                    messages=[TextMessage(text=text)]
-                )
+            MessagingApi(api_client).push_message(
+                PushMessageRequest(to=uid, messages=[TextMessage(text=text)])
             )
             print(f"[Line Bot] 推播成功 → {uid}")
         except Exception as e:
             print(f"[Line Bot] 推播失敗 → {uid}：{e}")
 
 
-def format_report_for_line(report_text):
+def push_message(text: str, to: str = None, access_token: str = None):
     """
-    Line 訊息有字數上限（5000字）
-    如果報告太長就截斷，並加上提示。
+    推播文字訊息。
+    to + access_token: 指定單一使用者（webhook 回覆用）。
+    省略 to: 廣播到所有頻道的所有已登錄使用者。
     """
+    if len(text) > 4900:
+        text = text[:4900] + "\n⋯（訊息過長，已截斷）"
+
+    if to:
+        _send(text, to, access_token)
+        return
+
+    for name, ch in CHANNELS.items():
+        users = get_all_user_ids(ch["channel_id"])
+        if not users:
+            print(f"[Line Bot] 警告：{name} 無已登錄使用者，跳過推播")
+            continue
+        for uid in users:
+            _send(text, uid, ch["access_token"])
+
+
+def format_report_for_line(report_text: str) -> str:
     limit = 4900
     if len(report_text) <= limit:
         return report_text
