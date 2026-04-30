@@ -14,17 +14,16 @@ from linebot.v3.messaging import (
     ApiClient, MessagingApi, Configuration,
     ReplyMessageRequest, TextMessage,
     QuickReply, QuickReplyItem, MessageAction,
-    MarkMessagesAsReadRequest,
+    MarkMessagesAsReadByTokenRequest,
 )
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent, UnfollowEvent
 from linebot.v3.exceptions import InvalidSignatureError
 import openai
-import threading
+import requests
 
 from config import CHANNELS, API_KEY, MODEL, BASE_URL
 from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id, remove_user_id
 from embedder import embed_query
-from line_push import push_message
 
 # ──────────────────────────────────────────
 app = Flask(__name__)
@@ -109,12 +108,24 @@ def build_system_prompt(user_query: str) -> str:
 """
 
 
-def mark_as_read(user_id: str, access_token: str):
+def mark_as_read(token: str, access_token: str):
     configuration = Configuration(access_token=access_token)
     with ApiClient(configuration) as api_client:
-        MessagingApi(api_client).mark_messages_as_read(
-            MarkMessagesAsReadRequest(chat_id=user_id)
+        MessagingApi(api_client).mark_messages_as_read_by_token(
+            MarkMessagesAsReadByTokenRequest(mark_as_read_token=token)
         )
+
+
+def show_loading_animation(user_id: str, access_token: str):
+    try:
+        requests.post(
+            "https://api.line.me/v2/bot/chat/loading/start",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"chatId": user_id, "loadingSeconds": 30},
+            timeout=5,
+        )
+    except Exception:
+        pass
 
 
 def line_reply(reply_token: str, text: str, access_token: str):
@@ -128,23 +139,6 @@ def line_reply(reply_token: str, text: str, access_token: str):
                 messages=[TextMessage(text=text)]
             )
         )
-
-
-def _process_qa(user_id: str, user_text: str, channel_name: str, access_token: str):
-    """背景執行：向量查詢 → AI 回覆 → push_message。"""
-    hist_key = f"{channel_name}:{user_id}"
-    history = conversation_histories.get(hist_key, [])
-    try:
-        messages = [{"role": "system", "content": build_system_prompt(user_text)}] + history
-        response = ai_client.chat.completions.create(model=MODEL, messages=messages)
-        reply_text = response.choices[0].message.content
-
-        history.append({"role": "assistant", "content": reply_text})
-        push_message(reply_text, to=user_id, access_token=access_token)
-
-    except Exception as e:
-        print(f"[錯誤] {e}")
-        push_message(f"抱歉，發生錯誤，請稍後再試。\n（{str(e)[:80]}）", to=user_id, access_token=access_token)
 
 
 # ──────────────────────────────────────────
@@ -178,10 +172,12 @@ def handle_message(event: MessageEvent):
 
     save_user_id(user_id, channel_id)
 
-    try:
-        mark_as_read(user_id, access_token)
-    except Exception:
-        pass
+    mark_as_read_token = event.message.mark_as_read_token
+    if mark_as_read_token:
+        try:
+            mark_as_read(mark_as_read_token, access_token)
+        except Exception:
+            pass
 
     # ── 清空紀錄（第一步：詢問確認）
     if user_text in ["清除", "重置", "reset", "/reset"]:
@@ -224,22 +220,26 @@ def handle_message(event: MessageEvent):
         line_reply(reply_token, get_latest_report("weekly"), access_token)
         return
 
-    # ── 初始化對話歷史
+    # ── Q&A：Loading Animation → 同步 AI → line_reply
+    show_loading_animation(user_id, access_token)
+
     if hist_key not in conversation_histories:
         conversation_histories[hist_key] = []
 
+    conversation_histories[hist_key].append({"role": "user", "content": user_text})
+    if len(conversation_histories[hist_key]) > 20:
+        conversation_histories[hist_key] = conversation_histories[hist_key][-20:]
     history = conversation_histories[hist_key]
-    history.append({"role": "user", "content": user_text})
 
-    if len(history) > 20:
-        conversation_histories[hist_key] = history[-20:]
-
-    # 在 request context 裡取值，傳給 thread（thread 內讀不到 g）
-    threading.Thread(
-        target=_process_qa,
-        args=(user_id, user_text, channel_name, access_token),
-        daemon=True
-    ).start()
+    try:
+        messages = [{"role": "system", "content": build_system_prompt(user_text)}] + history
+        response = ai_client.chat.completions.create(model=MODEL, messages=messages, timeout=25)
+        reply_text = response.choices[0].message.content
+        history.append({"role": "assistant", "content": reply_text})
+        line_reply(reply_token, reply_text, access_token)
+    except Exception as e:
+        print(f"[錯誤] {e}")
+        line_reply(reply_token, "抱歉，回應時間過長或發生錯誤，請再試一次。", access_token)
 
 
 def handle_follow(event: FollowEvent):
