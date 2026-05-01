@@ -20,6 +20,8 @@ from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent, U
 from linebot.v3.exceptions import InvalidSignatureError
 import openai
 import requests
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from config import CHANNELS, API_KEY, MODEL, BASE_URL
 from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id, remove_user_id
@@ -42,6 +44,14 @@ pending_reset: set[str] = set()
 # ──────────────────────────────────────────
 
 
+def _safe(fn, *args):
+    """在 fire-and-forget thread 裡執行，例外靜默忽略。"""
+    try:
+        fn(*args)
+    except Exception:
+        pass
+
+
 def get_latest_report(report_type: str = "daily") -> str:
     conn = get_connection()
     cursor = conn.cursor()
@@ -56,18 +66,14 @@ def get_latest_report(report_type: str = "daily") -> str:
     return row[0] if row else "（本週報告尚未產生，請先執行 weekly.py）"
 
 
-def build_system_prompt(user_query: str) -> str:
-    """RAG 版 system prompt：向量搜尋相關報告與文章，組成背景後交給 AI。"""
-    query_vec = embed_query(user_query)
-
-    relevant_reports = search_similar_reports(query_vec, n_results=2)
+def build_system_prompt(relevant_reports: list, relevant_articles: list) -> str:
+    """RAG 版 system prompt：接收已搜尋好的報告與文章，組成背景後交給 AI。"""
     reports_text = ""
     for r in relevant_reports:
         reports_text += f"\n【{r['date']} 報告】\n{r['content']}\n---"
     if not reports_text:
         reports_text = "（報告向量資料庫尚無資料，請先執行 main.py）"
 
-    relevant_articles = search_similar_articles(query_vec, n_results=5)
     articles_text = ""
     for a in relevant_articles:
         articles_text += (
@@ -172,12 +178,13 @@ def handle_message(event: MessageEvent):
 
     save_user_id(user_id, channel_id)
 
+    # T1, T2：fire-and-forget，不等結果
     mark_as_read_token = event.message.mark_as_read_token
     if mark_as_read_token:
-        try:
-            mark_as_read(mark_as_read_token, access_token)
-        except Exception:
-            pass
+        threading.Thread(
+            target=lambda: _safe(mark_as_read, mark_as_read_token, access_token),
+            daemon=True
+        ).start()
 
     # ── 清空紀錄（第一步：詢問確認）
     if user_text in ["清除", "重置", "reset", "/reset"]:
@@ -220,8 +227,12 @@ def handle_message(event: MessageEvent):
         line_reply(reply_token, get_latest_report("weekly"), access_token)
         return
 
-    # ── Q&A：Loading Animation → 同步 AI → line_reply
-    show_loading_animation(user_id, access_token)
+    # ── Q&A
+    # T2：fire-and-forget（與 embed_query 並行）
+    threading.Thread(
+        target=lambda: _safe(show_loading_animation, user_id, access_token),
+        daemon=True
+    ).start()
 
     if hist_key not in conversation_histories:
         conversation_histories[hist_key] = []
@@ -232,7 +243,17 @@ def handle_message(event: MessageEvent):
     history = conversation_histories[hist_key]
 
     try:
-        messages = [{"role": "system", "content": build_system_prompt(user_text)}] + history
+        # 主線：embed_query（與 T1、T2 並行）
+        query_vec = embed_query(user_text)
+
+        # T3、T4：兩個向量搜尋並行，等兩者完成
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_reports  = executor.submit(search_similar_reports, query_vec, n_results=2)
+            f_articles = executor.submit(search_similar_articles, query_vec, n_results=5)
+            relevant_reports  = f_reports.result()
+            relevant_articles = f_articles.result()
+
+        messages = [{"role": "system", "content": build_system_prompt(relevant_reports, relevant_articles)}] + history
         response = ai_client.chat.completions.create(model=MODEL, messages=messages, timeout=25)
         reply_text = response.choices[0].message.content
         history.append({"role": "assistant", "content": reply_text})

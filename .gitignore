@@ -35,5 +35,5 @@ env/
 .DS_Store
 
 # 本地測試與暫時檔案
-news_sources.txt
+news_sources.md
 test_url.py
