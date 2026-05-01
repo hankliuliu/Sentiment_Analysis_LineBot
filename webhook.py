@@ -21,7 +21,6 @@ from linebot.v3.exceptions import InvalidSignatureError
 import openai
 import requests
 import threading
-from concurrent.futures import ThreadPoolExecutor
 
 from config import CHANNELS, API_KEY, MODEL, BASE_URL
 from database import get_connection, init_db, search_similar_articles, search_similar_reports, save_user_id, remove_user_id
@@ -246,12 +245,10 @@ def handle_message(event: MessageEvent):
         # 主線：embed_query（與 T1、T2 並行）
         query_vec = embed_query(user_text)
 
-        # T3、T4：兩個向量搜尋並行，等兩者完成
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            f_reports  = executor.submit(search_similar_reports, query_vec, n_results=2)
-            f_articles = executor.submit(search_similar_articles, query_vec, n_results=5)
-            relevant_reports  = f_reports.result()
-            relevant_articles = f_articles.result()
+        # 向量搜尋序列執行（ChromaDB 全域 client 非 thread-safe，並行會 deadlock）
+        # 原本 T3、T4 並行的設計因此放棄
+        relevant_reports  = search_similar_reports(query_vec, n_results=2)
+        relevant_articles = search_similar_articles(query_vec, n_results=5)
 
         messages = [{"role": "system", "content": build_system_prompt(relevant_reports, relevant_articles)}] + history
         response = ai_client.chat.completions.create(model=MODEL, messages=messages, timeout=25)
