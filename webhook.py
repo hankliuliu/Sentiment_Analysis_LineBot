@@ -250,7 +250,10 @@ def handle_message(event: MessageEvent):
         relevant_reports  = search_similar_reports(query_vec, n_results=2)
         relevant_articles = search_similar_articles(query_vec, n_results=5)
 
-        messages = [{"role": "system", "content": build_system_prompt(relevant_reports, relevant_articles)}] + history
+        if user_text == "test":
+            messages = [{"role": "user", "content": "just reply ok"}]
+        else:
+            messages = [{"role": "system", "content": build_system_prompt(relevant_reports, relevant_articles)}] + history
         response = ai_client.chat.completions.create(model=MODEL, messages=messages, timeout=25)
         reply_text = response.choices[0].message.content
         history.append({"role": "assistant", "content": reply_text})
