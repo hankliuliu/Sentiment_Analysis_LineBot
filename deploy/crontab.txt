@@ -1,11 +1,11 @@
 # crontab 排程設定
 # 編輯：crontab -e
 # 查看：crontab -l
-#
-# log 路徑請替換為實際部署位置的 logs/ 絕對路徑
+# 
+# docker、log 路徑請替換為實際部署的絕對路徑
 
 # 每天晚上 21:00 執行每日新聞分析
-0 21 * * * docker exec sentiment-bot python main.py >> /Users/ycliu/Projects/Sentiment_Analysis_LineBot/logs/daily.log 2>&1
+0 21 * * * /yourpath/docker exec sentiment-bot python main.py >> /yourpath/logs/daily.log 2>&1
 
 # 每週一早上 09:00 執行週報合成
-0 9 * * 1 docker exec sentiment-bot python weekly.py >> /Users/ycliu/Projects/Sentiment_Analysis_LineBot/logs/weekly.log 2>&1
+0 9 * * 1 /yourpath/docker exec sentiment-bot python weekly.py >> /yourpath/logs/weekly.log 2>&1
