@@ -16,7 +16,7 @@ from linebot.v3.messaging import (
     QuickReply, QuickReplyItem, MessageAction,
     MarkMessagesAsReadByTokenRequest,
 )
-from linebot.v3.webhooks import MessageEvent, TextMessageContent, FollowEvent, UnfollowEvent
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, StickerMessageContent, FollowEvent, UnfollowEvent
 from linebot.v3.exceptions import InvalidSignatureError
 import openai
 import requests
@@ -263,6 +263,10 @@ def handle_message(event: MessageEvent):
         line_reply(reply_token, "抱歉，回應時間過長或發生錯誤，請再試一次。", access_token)
 
 
+def handle_sticker(event: MessageEvent):
+    line_reply(event.reply_token, "呱", g.channel["access_token"])
+
+
 def handle_follow(event: FollowEvent):
     save_user_id(event.source.user_id, g.channel["channel_id"])
 
@@ -274,6 +278,7 @@ def handle_unfollow(event: UnfollowEvent):
 # 把三個事件處理函數註冊到每個頻道的 handler
 for _h in handlers.values():
     _h.add(MessageEvent, message=TextMessageContent)(handle_message)
+    _h.add(MessageEvent, message=StickerMessageContent)(handle_sticker)
     _h.add(FollowEvent)(handle_follow)
     _h.add(UnfollowEvent)(handle_unfollow)
 
