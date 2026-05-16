@@ -264,7 +264,14 @@ def handle_message(event: MessageEvent):
 
 
 def handle_sticker(event: MessageEvent):
-    line_reply(event.reply_token, "呱", g.channel["access_token"])
+    access_token = g.channel["access_token"]
+    mark_as_read_token = event.message.mark_as_read_token
+    if mark_as_read_token:
+        threading.Thread(
+            target=lambda: _safe(mark_as_read, mark_as_read_token, access_token),
+            daemon=True
+        ).start()
+    line_reply(event.reply_token, "呱", access_token)
 
 
 def handle_follow(event: FollowEvent):
