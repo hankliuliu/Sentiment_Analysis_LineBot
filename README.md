@@ -57,9 +57,11 @@ Sentiment_Analysis/
 ├── requirements.txt   # Python 套件清單
 ├── .env.example       # 憑證設定模板
 ├── .env               # 實際憑證（不進 git）
+├── Dockerfile         # Docker image 建置腳本
+├── docker-compose.yaml # container 設定（port、volume、環境變數）
+├── .dockerignore      # Docker build 排除清單
 ├── deploy/
-│   ├── nginx.conf              # nginx 反向代理設定模板
-│   ├── sentiment-bot.service   # systemd 服務設定模板
+│   ├── docker-design.md        # Docker 改版設計決策紀錄
 │   └── crontab.txt             # cron 排程設定模板
 ├── sentiment.db       # SQLite 資料庫（自動建立，不進 git）
 ├── chroma_db/         # ChromaDB 向量資料庫（自動建立，不進 git）
@@ -72,11 +74,11 @@ Sentiment_Analysis/
 
 ### 系統需求
 
-- Python 3.10+
-- Linux server（推薦）或 macOS / Windows
+- Docker（部署用）
+- Python 3.10+（本機開發用）
 - 網際網路連線
 
-### 安裝相依套件
+### 本機開發安裝
 
 ```bash
 pip install -r requirements.txt
@@ -141,11 +143,21 @@ crontab -e
 
 ### 啟動 LINE Bot 互動問答（Server）
 
-參考 `deploy/` 資料夾內的模板：
+```bash
+# 首次部署前，確認 sentiment.db 存在（避免 Docker 建立同名目錄）
+touch sentiment.db
 
-1. 填入路徑後套用 `nginx.conf`
-2. 填入路徑後套用 `sentiment-bot.service`（gunicorn 持續運行）
-3. 至 LINE Developer Console 更新 Webhook URL 為 `https://你的domain/callback`
+# 建立並啟動 container
+docker compose up -d --build
+
+# 確認服務狀態
+docker compose ps
+docker compose logs -f
+```
+
+排程設定參考 `deploy/crontab.txt`，以 `docker exec sentiment-bot` 方式執行批次任務。
+
+至 LINE Developer Console 更新 Webhook URL 為 `https://你的domain/callback`。
 
 ---
 
@@ -218,7 +230,8 @@ DATE_FILTER = "all"     # 不過濾時間
 | 向量資料庫 | ChromaDB（cosine 相似度）|
 | 關聯式資料庫 | SQLite |
 | Web 框架 | Flask + gunicorn |
-| 反向代理 | nginx + Let's Encrypt SSL |
+| 反向代理 | Traefik（共用 server，SSL 終止）|
+| 容器化 | Docker + docker-compose |
 | 訊息平台 | LINE Messaging API |
 | HTML 解析 | BeautifulSoup4 |
 | 嵌入框架 | sentence-transformers |

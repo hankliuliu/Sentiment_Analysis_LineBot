@@ -46,7 +46,7 @@
 | 項目 | 說明 |
 |------|------|
 | 系統類型 | 批次處理 + 即時問答混合架構 |
-| 部署環境 | Linux Server（nginx + gunicorn + systemd）|
+| 部署環境 | Linux Server（Traefik + gunicorn + Docker）|
 | 主要使用者 | 政府相關人員、政策研究人員 |
 | 語言環境 | 繁體中文（台灣） |
 | 運行頻率 | 每日一次（批次）+ 隨時問答（即時） |
@@ -149,7 +149,7 @@
                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │               互動問答層 (webhook.py)                             │
-│   Flask + gunicorn  |  nginx 反代  |  對話歷史管理  |  RAG 搜尋    │
+│   Flask + gunicorn  |  Traefik 路由  |  對話歷史管理  |  RAG 搜尋   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -239,7 +239,7 @@ LINE_USER_IDS: list[str]  # 推播目標，支援多位使用者（從 LINE_USER
 #### 設計決策
 - **所有常數集中於此檔案**，其他模組 `from config import XXX` 取得。
 - 敏感憑證透過 `python-dotenv` 從 `.env` 讀取，`.env` 列於 `.gitignore`，不進版本控制。
-- `DB_PATH` 與 `CHROMA_DIR` 使用 `__file__` 計算絕對路徑，確保 cron / systemd 從任何工作目錄執行時路徑均正確。
+- `DB_PATH` 與 `CHROMA_DIR` 使用 `__file__` 計算絕對路徑，確保 cron（透過 `docker exec`）從任何工作目錄執行時路徑均正確。
 
 ---
 
@@ -1067,9 +1067,9 @@ main.py / weekly.py / webhook.py
 #### Webhook 設定需求
 
 ```
-1. gunicorn 啟動：由 systemd 服務管理（監聽 127.0.0.1:5000）
-2. nginx 反向代理：將 /callback 路由至 localhost:5000
-3. SSL 憑證：Let's Encrypt（由 certbot 自動管理）
+1. gunicorn 啟動：由 Docker container 管理（監聽 0.0.0.0:5000，container 內部）
+2. Traefik 反向代理：將流量路由至 host:9086 → container:5000
+3. SSL 憑證：由共用 server 的 Traefik 統一管理
 4. LINE Developer Console 設定：
    Webhook URL = https://<server-domain>/callback
    Use Webhook: ON
@@ -1130,35 +1130,32 @@ response = client.chat.completions.create(
 ### 10.1 Server 部署
 
 ```
-Linux Server
-├── Python 虛擬環境 (venv)
-│   └── requirements.txt 套件（含 multilingual-e5-large 模型）
-│
-├── 憑證管理
-│   └── .env（GEMINI_API_KEY、LINE Token、LINE_USER_IDS）
-│
-├── 持久化儲存
-│   ├── sentiment.db   (SQLite)
-│   ├── chroma_db/     (ChromaDB 向量索引)
-│   └── reports/       (報告 .txt 輸出)
-│
-├── LINE Bot 伺服器
-│   ├── gunicorn (webhook:app, 127.0.0.1:5000)  ← systemd 管理
-│   └── nginx (反向代理 /callback → :5000, HTTPS)
-│
-└── 排程執行
-    ├── cron: main.py   每日 08:00
-    └── cron: weekly.py 每週一 09:00
+外部請求（LINE Server）
+    ↓ HTTPS :443
+Traefik（共用，SSL 終止）
+    ↓ HTTP，路由到 host:9086
+container sentiment-bot（127.0.0.1:9086 → container:5000）
+    └── gunicorn（常駐，webhook:app）
+
+主機 Volumes（container 讀寫）
+    ├── sentiment.db   (SQLite)
+    ├── chroma_db/     (ChromaDB 向量索引)
+    ├── reports/       (報告 .txt 輸出)
+    └── logs/          (gunicorn access/error log)
+
+主機 crontab（docker exec 進入 container 執行）
+    ├── main.py   每日 21:00
+    └── weekly.py 每週一 09:00
 ```
 
 ### 10.2 排程執行設定（crontab）
 
 ```
-# 每天早上 08:00 跑每日分析
-0 8 * * * /path/to/venv/bin/python /path/to/project/main.py >> /path/to/project/logs/daily.log 2>&1
+# 每天晚上 21:00 執行每日新聞分析
+0 21 * * * docker exec sentiment-bot python main.py >> /path/to/logs/daily.log 2>&1
 
-# 每週一早上 09:00 跑週報
-0 9 * * 1 /path/to/venv/bin/python /path/to/project/weekly.py >> /path/to/project/logs/weekly.log 2>&1
+# 每週一早上 09:00 執行週報合成
+0 9 * * 1 docker exec sentiment-bot python weekly.py >> /path/to/logs/weekly.log 2>&1
 ```
 
 詳細設定模板見 `deploy/crontab.txt`。
@@ -1167,12 +1164,15 @@ Linux Server
 
 | 執行情境 | 命令 |
 |---------|------|
-| 手動執行每日流程 | `python main.py` |
-| 手動執行每週報告 | `python weekly.py` |
-| 啟動 LINE Bot（開發用）| `python webhook.py` |
-| 啟動 LINE Bot（正式）| `sudo systemctl start sentiment-bot` |
-| 查看資料庫狀態 | `python db_utils.py status` |
-| 清除所有資料 | `python db_utils.py clear-all` |
+| 啟動服務 | `docker compose up -d` |
+| 重新 build 後啟動 | `docker compose up -d --build` |
+| 停止服務 | `docker compose stop` |
+| 查看 log | `docker compose logs -f` |
+| 手動執行每日流程 | `docker exec sentiment-bot python main.py` |
+| 手動執行每週報告 | `docker exec sentiment-bot python weekly.py` |
+| 進入 container 除錯 | `docker exec -it sentiment-bot bash` |
+| 查看資料庫狀態 | `docker exec sentiment-bot python db_utils.py status` |
+| 清除所有資料 | `docker exec sentiment-bot python db_utils.py clear-all` |
 
 ---
 
@@ -1211,7 +1211,6 @@ Linux Server
 | 新增 Reply API | 低 | Webhook 直接回覆改用 Reply API，降低 LINE 推播費用 |
 | 加入 LLM 重試邏輯 | 低 | API 呼叫失敗時指數退避重試 |
 | 監控與告警 | 低 | 每日流程失敗時透過 LINE 推播告警訊息 |
-| 容器化部署 (Docker) | 低 | 確保跨環境一致性，方便遷移 |
 | 單元測試 | 低 | 為各模組撰寫測試案例 |
 
 ---
