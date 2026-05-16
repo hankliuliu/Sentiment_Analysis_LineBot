@@ -49,13 +49,6 @@ DB_PATH    = os.path.join(BASE_DIR, "sentiment.db")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 
 # ════════════════════════════════════════
-#  排程器設定
-# ════════════════════════════════════════
-SCHEDULER_ENABLED = False   # 跑一次就結束 / 交給 cron
-# SCHEDULER_ENABLED = True  # 定時自動執行
-SCHEDULER_TIMES   = ["08:00"]  # 每天幾點執行
-
-# ════════════════════════════════════════
 #  LINE Bot 設定（從 .env 讀取）
 #  新增頻道：在 CHANNELS 加一組 key，並在 .env 補三個對應變數即可。
 # ════════════════════════════════════════

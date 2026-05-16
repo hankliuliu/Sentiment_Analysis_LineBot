@@ -1,9 +1,7 @@
 import os
 import openai
-import schedule
-import time as time_module
 from config    import (API_KEY, MODEL, MAX_ARTICLES_TO_ANALYZE, TEST_FETCH,
-                       SCHEDULER_ENABLED, SCHEDULER_TIMES, IMPORTANT_COUNT, BASE_URL)
+                       IMPORTANT_COUNT, BASE_URL)
 from fetcher   import fetch_all, fetch_contents_for_selected
 from processor import process
 from database  import init_db, save_articles, save_report, save_article_embeddings, save_report_embedding
@@ -171,17 +169,4 @@ def agent():
 
 if __name__ == "__main__":
     init_db()
-
-    if not SCHEDULER_ENABLED:
-        print("[排程器] 已關閉，直接執行一次")
-        agent()
-    else:
-        print(f"[排程器] 已開啟，排定執行時間：{SCHEDULER_TIMES}")
-        print("[排程器] 程式持續運行中，按 Ctrl+C 可停止\n")
-        for t in SCHEDULER_TIMES:
-            schedule.every().day.at(t).do(agent)
-        # print("[排程器] 啟動時先執行一次...")
-        # agent()
-        while True:
-            schedule.run_pending()
-            time_module.sleep(30)
+    agent()

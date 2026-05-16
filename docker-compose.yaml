@@ -1,0 +1,21 @@
+services:
+  sentiment-bot:
+    build: .
+    container_name: sentiment-bot
+    ports:
+      - "127.0.0.1:9086:5000"
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Taipei
+    volumes:
+      - ./sentiment.db:/app/sentiment.db
+      - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "2.0"
+    restart: unless-stopped

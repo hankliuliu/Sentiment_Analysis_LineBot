@@ -1,0 +1,11 @@
+.env
+venv/
+__pycache__/
+*.pyc
+chroma_db/
+sentiment.db
+logs/
+reports/
+.git/
+*.bat
+deploy/

@@ -2,12 +2,10 @@
 # 編輯：crontab -e
 # 查看：crontab -l
 #
-# 填入前請將下列路徑替換為實際路徑：
-#   /path/to/venv     → Python 虛擬環境路徑
-#   /path/to/project  → 專案根目錄絕對路徑
+# log 路徑請替換為實際部署位置的 logs/ 絕對路徑
 
-# 每天早上 08:00 執行每日新聞分析
-0 8 * * * /path/to/venv/bin/python /path/to/project/main.py >> /path/to/project/logs/daily.log 2>&1
+# 每天晚上 21:00 執行每日新聞分析
+0 21 * * * docker exec sentiment-bot python main.py >> /Users/ycliu/Projects/Sentiment_Analysis_LineBot/logs/daily.log 2>&1
 
 # 每週一早上 09:00 執行週報合成
-0 9 * * 1 /path/to/venv/bin/python /path/to/project/weekly.py >> /path/to/project/logs/weekly.log 2>&1
+0 9 * * 1 docker exec sentiment-bot python weekly.py >> /Users/ycliu/Projects/Sentiment_Analysis_LineBot/logs/weekly.log 2>&1
